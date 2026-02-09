@@ -1,102 +1,87 @@
-# Web Scraper Agent
+# get-web-page — Claude Code Skill
 
-A Claude-powered agent that uses a headless browser to log into websites, scrape pages, and convert the HTML content to Markdown.
+A Claude Code skill that uses [Vercel agent-browser](https://github.com/vercel-labs/agent-browser) to log into websites, scrape authenticated pages, and return clean Markdown content — all from within a Claude Code session.
 
-## Architecture
+## How it works
 
 ```
-User ──▶ CLI ──▶ Claude Agent (tool-use loop) ──▶ Browser Tool (Playwright)
-                        │                                  │
-                        │                                  ▼
-                        │                          HTML page content
-                        │                                  │
-                        ▼                                  ▼
-                  Markdown output  ◀──────  HTML→Markdown converter
+User invokes /get-web-page
+        │
+        ▼
+Claude reads SKILL.md instructions
+        │
+        ▼
+agent-browser open <login-url>       ← headless Chromium
+agent-browser snapshot -i            ← find form fields
+agent-browser fill / click           ← log in with credentials
+        │
+        ▼
+agent-browser open <page-url>        ← navigate to target
+agent-browser get html body          ← extract HTML
+        │
+        ▼
+html_to_markdown.py                  ← convert to Markdown
+        │
+        ▼
+Markdown returned to conversation    ← Claude continues working
 ```
 
-The agent uses Claude as its "brain" via the Anthropic API with tool-use. Claude decides which browser actions to take (navigate, login, click, scrape) and orchestrates the full workflow autonomously.
+Claude Code acts as the agent brain — it reads the snapshot, decides which fields to fill, adapts to different login forms, and handles errors.
 
-## Setup
+## Prerequisites
+
+Install `agent-browser` globally:
 
 ```bash
-pip install -r requirements.txt
-playwright install chromium
+npm install -g agent-browser
+agent-browser install
 ```
 
-Set your Anthropic API key:
+Optionally, for higher-quality HTML→Markdown conversion:
 
 ```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
+pip install markdownify
 ```
+
+(The skill includes a built-in fallback converter that works without any Python dependencies beyond the standard library.)
 
 ## Credentials
 
-The agent needs credentials to log into the target website. Two methods are supported:
-
-### 1. Environment variables (non-interactive)
+Set credentials via environment variables before starting Claude Code:
 
 ```bash
-export SCRAPER_USERNAME="myuser"
+export SCRAPER_USERNAME="user@example.com"
 export SCRAPER_PASSWORD="mypassword"
 ```
 
-Custom env var names can be specified:
-
-```bash
-export MY_USER="admin"
-export MY_PASS="secret"
-python -m web_scraper_agent https://example.com --username-env MY_USER --password-env MY_PASS
-```
-
-### 2. Interactive prompt
-
-If the environment variables are not set, the agent will prompt for username and password on stdin (password input is hidden).
+If these are not set, the skill will ask you for them interactively during the session.
 
 ## Usage
 
-```bash
-# Basic: login and scrape the same URL
-python -m web_scraper_agent https://example.com/dashboard
-
-# Separate login page and target page
-python -m web_scraper_agent https://example.com/dashboard \
-    --login-url https://example.com/login
-
-# Navigate to a different page after login
-python -m web_scraper_agent https://example.com \
-    --login-url https://example.com/login \
-    --page-url https://example.com/reports
-
-# Save output to a file
-python -m web_scraper_agent https://example.com/dashboard -o output.md
-
-# Run with visible browser (for debugging)
-python -m web_scraper_agent https://example.com/dashboard --no-headless
-```
-
-## Options
-
-| Flag | Description |
-|------|-------------|
-| `url` | URL of the page to scrape (positional) |
-| `--login-url` | Login page URL (defaults to target URL) |
-| `--page-url` | Page to navigate to after login |
-| `--username-env` | Env var name for username (default: `SCRAPER_USERNAME`) |
-| `--password-env` | Env var name for password (default: `SCRAPER_PASSWORD`) |
-| `--model` | Anthropic model to use (default: `claude-sonnet-4-20250514`) |
-| `--no-headless` | Show the browser window |
-| `-o, --output` | Write Markdown to a file instead of stdout |
-
-## Project Structure
+Inside a Claude Code session:
 
 ```
-web_scraper_agent/
-  __init__.py       # Package marker
-  __main__.py       # python -m entrypoint
-  agent.py          # Claude agent loop with tool dispatch
-  browser_tool.py   # Playwright browser wrapper + tool schemas
-  cli.py            # Argument parsing and orchestration
-  converter.py      # HTML → Markdown conversion
-  credentials.py    # Credential resolution (env vars / prompt)
-requirements.txt
+/get-web-page https://myapp.com/login
 ```
+
+Login and then scrape a different page:
+
+```
+/get-web-page https://myapp.com/login https://myapp.com/dashboard/reports
+```
+
+After the skill runs, the Markdown content is available in the conversation. You can then ask Claude to summarize it, extract data, compare pages, etc.
+
+## Skill structure
+
+```
+.claude/skills/get-web-page/
+├── SKILL.md                      # Skill instructions (the agent prompt)
+└── scripts/
+    └── html_to_markdown.py       # HTML → Markdown converter
+```
+
+| File | Purpose |
+|------|---------|
+| `SKILL.md` | Step-by-step instructions Claude follows: resolve credentials, open login page, snapshot the form, fill & submit, navigate, extract HTML, convert to Markdown |
+| `html_to_markdown.py` | Reads HTML from stdin, outputs Markdown. Uses `markdownify` if installed, otherwise a built-in regex-based converter |
